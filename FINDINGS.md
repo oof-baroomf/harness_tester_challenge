@@ -1,196 +1,158 @@
-# Harness Tester Challenge Findings
+# Harness Tester Challenge Hardware Findings
 
 Target: https://github.com/commaai/harness_tester_challenge at `069f724`.
 
-This list counts distinct bugs, not repeated KiCad DRC instances. I used the
-schematic netlist exported by KiCad 10.0.3, the PCB DRC report, the firmware
-source, and current component documentation.
+This is a hardware-only list. It intentionally excludes firmware-only bugs and
+does not count repeated ERC/DRC violations as separate findings. KiCad ERC/DRC
+was used only to confirm concrete schematic/PCB facts such as an open net,
+footprint mismatch, or placement conflict.
 
 ## Verification Sources
 
-- KiCad ERC: 107 violations. Actionable hard errors include undriven power and
-  antenna input pins; most library warnings are environmental.
-- KiCad DRC: 853 violations, plus 1 unconnected item and 2 schematic/PCB parity
-  issues.
-- Exported schematic netlist: `/tmp/harnesstester_reports/netlist.xml` during
-  analysis.
-- Firmware source: `firmware/firmware.ino`, `firmware/CY8C9560.cpp`,
-  `firmware/CY8C9560.h`.
-- Official docs checked:
-  - PJRC Teensy 4.1: https://www.pjrc.com/store/teensy41.html
-  - PJRC Teensy UART: https://www.pjrc.com/teensy/td_uart.html
-  - PJRC Teensy Wire/I2C: https://www.pjrc.com/teensy/td_libs_Wire.html
-  - u-blox NEO-M8 data sheet:
-    https://content.u-blox.com/sites/default/files/NEO-M8_DataSheet_%28UBX-13003366%29.pdf
-  - u-blox NEO-M8 hardware integration manual:
-    https://content.u-blox.com/sites/default/files/NEO-M8_HardwareIntegrationManual_%28UBX-13003557%29.pdf
-  - Infineon CY8C95xxA data sheet:
-    https://www.infineon.com/assets/row/public/documents/30/57/infineon-cy8c9520a-cy8c9540a-cy8c9560a-20--40--and-60-bit-i-o-expander-with-eeprom-datasheet-additionaltechnicalinformation-en.pdf
-  - Analog Devices MAX2679 product page:
-    https://www.analog.com/en/products/max2679.html
-  - Analog Devices MAX2679 data sheet:
-    https://www.analog.com/media/en/technical-documentation/data-sheets/MAX2679-MAX2679B.pdf
+- KiCad 10.0.3 schematic netlist exported from
+  `kicad_files/hardware_challenge.kicad_sch`.
+- KiCad PCB DRC with schematic parity enabled on
+  `kicad_files/hardware_challenge.kicad_pcb`.
+- PJRC Teensy 4.1 docs:
+  https://www.pjrc.com/store/teensy41.html
+- u-blox NEO-M8 data sheet:
+  https://content.u-blox.com/sites/default/files/NEO-M8_DataSheet_%28UBX-13003366%29.pdf
+- u-blox NEO-M8 hardware integration manual:
+  https://content.u-blox.com/sites/default/files/NEO-M8_HardwareIntegrationManual_%28UBX-13003557%29.pdf
+- Infineon CY8C95xxA data sheet:
+  https://www.infineon.com/assets/row/public/documents/30/49/infineon-cy8c9520a-cy8c9540a-cy8c9560a-20--40--and-60-bit-i-o-expander-with-eeprom-datasheet-en.pdf
+- Analog Devices MAX2679 product page and data sheet:
+  https://www.analog.com/en/products/max2679.html
+  https://www.analog.com/media/en/technical-documentation/data-sheets/MAX2679-MAX2679B.pdf
+- Broadcom ASMB-KTF0-0A306 data sheet:
+  https://docs.broadcom.com/doc/ASMB-KTF0-0A306-DS100
+- Vishay SiSS27DN data sheet:
+  https://www.vishay.com/docs/62847/siss27dn.pdf
+- Nexperia PMEG10020ELR data sheet:
+  https://assets.nexperia.com/documents/data-sheet/PMEG10020ELR.pdf
+- Littelfuse SMAJ16A product page:
+  https://www.littelfuse.com/products/overvoltage-protection/tvs-diodes/surface-mount/smaj/smaj16a
+- TE/Linx ANT-GNSSCP-TH25L1 product page and data sheet:
+  https://www.te.com/en/product-ANT-GNSSCP-TH25L1.html
+  https://www.te.com/commerce/DocumentDelivery/DDEController?Action=srchrtrv&DocFormat=pdf&DocLang=English&DocNm=ant-gnsscp-th25l1-ds&DocType=Data+Sheet&PartCntxt=ANT-GNSSCP-TH25L1
 
-## Bugs
+## Hardware Bugs
 
-1. GPS UART is wired straight-through instead of crossed.
-   Netlist: `UBX-TXD` connects U3 TXD/SPI_MISO to Teensy pin 1/TX1, and
-   `UBX-RXD` connects U3 RXD/SPI_MOSI to Teensy pin 0/RX1. For UART, module TX
-   must go to MCU RX and module RX must go to MCU TX, so `Serial1` cannot
-   receive GPS data.
+1. The CY8C9560A footprint is the wrong physical package.
+   U4 is assigned `Package_QFP:TQFP-100_12x12mm_P0.4mm`, but
+   `CY8C9560A-24AXIT` is a 100-pin TQFP 14 mm x 14 mm package with 0.5 mm
+   pitch. The expander cannot be assembled on this PCB footprint.
 
-2. The CY8C9560 I2C SDA pull-up is a pull-down.
-   Netlist: R3.1 is `GND`, R3.2 is `CY_SDA`. SCL has R2 to `+3.3V`, but SDA is
-   held low through 4.7k, so the I2C bus is stuck.
+2. The GPS UART is wired straight-through instead of crossed.
+   `UBX-TXD` connects NEO-M8 pin 20 `TxD` to Teensy pin 1 `TX1`, and
+   `UBX-RXD` connects NEO-M8 pin 21 `RxD` to Teensy pin 0 `RX1`. UART TX must
+   connect to the other device's RX.
 
-3. The RGB LED has no current-limiting resistors.
-   Netlist: D3 common anode is tied to `+3.3V`; D3 blue/green/red cathodes go
-   directly to Teensy pins 7/6/5. That can overcurrent the LEDs and MCU pins.
+3. The CY8C9560 I2C SDA line is pulled down instead of pulled up.
+   R2 correctly pulls `CY_SCL` to `+3.3V`, but R3 connects `CY_SDA` to `GND`.
+   That holds SDA low and prevents normal I2C communication.
 
-4. The MAX2679 LNA is overvolted.
-   Netlist: U5 VCC is on `Net-(U3-VCC_RF)`, driven from NEO-M8 `VCC_RF`. The
-   MAX2679 operates from 1.08 V to 1.98 V and has a 2.2 V absolute VCC maximum,
-   while the NEO-M8 design powers the receiver at 3.3 V and exposes VCC_RF as an
-   RF supply rail.
+4. The RGB status LED has no current-limiting resistors.
+   D3 pin 1 is tied directly to `+3.3V`; D3 pins 2/3/4 go directly to Teensy
+   GPIO nets. Each LED channel needs a current limiter.
 
-5. The MAX2679 `RFOUT/SHDNB` pin is not biased high to enable the LNA.
-   Netlist: U5.A2 only connects to L1. The MAX2679 data sheet shows
-   `RFOUT/SHDNB` as both RF output and shutdown control; the typical application
-   biases it with 25k to VCC. Here it floats through the RF path, so the LNA can
-   remain shut down or unstable.
+5. The RGB LED red and blue channels are swapped against the selected part.
+   The ASMB-KTF0-0A306 data sheet lists pin 2 as red cathode and pin 4 as blue
+   cathode. The schematic/PCB connect D3 pin 2 to `LED_B` and pin 4 to
+   `LED_R`, so the hardware status colors are wrong.
 
-6. The MAX2679 input matching/DC-block network is missing at the antenna input.
-   Netlist: AE1 antenna connects directly to U5.B1/RFIN. The MAX2679 data sheet
-   requires off-chip input matching using an inductor in series with a
-   DC-blocking capacitor.
+6. The CY8C9560 reset pin is given the wrong polarity in the schematic.
+   The Infineon data sheet describes the external reset as active high `XRES`
+   with an internal pull-down. The design labels and routes it as
+   `CY_RST_N`/`RESET_N`, an active-low reset. That is a hardware symbol/pin
+   function error independent of firmware behavior.
 
-7. The only visible 12 nH RF inductor is on the MAX2679 output path, not the
-   input path where the data sheet requires the matching inductor.
-   Netlist: U5.A2 -> L1 -> C5 -> U3.RF_IN. That puts L1 after RFOUT instead of
-   in front of RFIN.
+7. The MAX2679 LNA is powered from an overvoltage rail.
+   U5 VCC is tied to `Net-(U3-VCC_RF)`. With the NEO-M8 powered at 3.3 V,
+   `VCC_RF` is approximately `VCC - 0.1 V`, while MAX2679 operation is
+   specified for 1.08 V to 1.98 V.
 
-8. The NEO-M8 `SAFEBOOT_N` service pin is routed to a Teensy GPIO.
-   The u-blox NEO-M8 pin table describes `SAFEBOOT_N` as reserved/service and
-   says to leave it open. A firmware or boot-time GPIO mistake can hold it low,
-   which starts safe boot mode instead of GNSS operation.
+8. MAX2679 RFIN has no required DC-blocking capacitor.
+   The data sheet says RFIN requires a DC-blocking capacitor and external
+   matching components. In this design AE1 connects directly to U5 B1/RFIN.
 
-9. The schematic/firmware assume cable pins map contiguously to CY8C9560 bits,
-   but `CBL_20` through `CBL_27` are actually on CY bits 24 through 31.
-   The firmware drives bit 20 for harness pin 20; hardware routes pin 20 to
-   GPort3_Bit0, which is input register bit 24.
+9. MAX2679 RFIN has no input matching inductor.
+   The MAX2679 typical input network uses a series inductor with the
+   DC-blocking capacitor. There is no inductor between the antenna and U5
+   B1/RFIN.
 
-10. `CBL_28` through `CBL_35` are mapped four bits higher than firmware expects.
-    Hardware routes them to CY bits 32 through 39, while firmware treats them as
-    bits 28 through 35.
+10. The 12 nH RF inductor is on the wrong side of the LNA.
+    L1 is connected from U5 A2/RFOUT to C5 and the NEO-M8 RF input. The
+    MAX2679 output is internally matched to 50 ohms; the external 12 nH
+    inductor belongs in the RFIN input matching network, not in the output
+    path.
 
-11. `CBL_36` through `CBL_39` are routed beyond the firmware's tested bit range.
-    Hardware routes them to CY bits 40 through 43, but the firmware loops
-    `j < NUM_HARNESS_PINS` and only evaluates bits 0 through 39.
+11. The RF coupling capacitor value is not a GNSS RF value.
+    C5 is `100n` in the 1.575 GHz path from the LNA output to NEO-M8 RF_IN.
+    The MAX2679 application material uses pF/nF RF capacitors, including
+    1000 pF parts; a generic 100 nF 0402 capacitor is not an appropriate RF
+    coupling/matching part at GNSS frequency.
 
-12. The PCB has an actual open on `+3.3V`.
-    KiCad DRC reports one unconnected item: two `+3.3V` F.Cu tracks at about
-    `(167.320101, 35.774840)` and `(158.100000, 32.900000)` are missing a
-    connection.
+12. The GNSS RF routing is not a single controlled 50 ohm geometry.
+    The NEO-M8 manual requires a controlled 50 ohm connection to RF_IN. The
+    antenna/LNA/module route changes width from 0.8128 mm to 0.127 mm to
+    0.508 mm, and the nearest internal plane under the top RF route is the
+    `+3.3V` plane, not a continuous RF ground reference.
 
-13. The PCB violates its own minimum track width on 199 tracks.
-    DRC: board setup minimum width is 0.2000 mm; actual traces are 0.1270 mm on
-    many cable, LED, RF, and power nets.
+13. NEO-M8 `SAFEBOOT_N` is routed to a GPIO even though the data sheet says to
+    leave it open.
+    U3 pin 1 is connected to `UBX-SAFEBOOT` and then to a Teensy GPIO. The
+    NEO-M8 pin table describes this pin as reserved/service for future
+    service, updates, and reconfiguration, with `leave OPEN` guidance.
 
-14. The PCB violates its own clearance rule hundreds of times.
-    DRC reports 481 clearance violations at 0.1505 mm against a 0.2000 mm rule,
-    mostly signal or power tracks/vias against the GND and +3.3V pours.
+14. Reverse-polarity protection is defeated by the unidirectional TVS location.
+    D1 is a unidirectional SMAJ16A from the raw input jack node to ground and
+    is placed before the reverse-protection PMOS. On a reverse-polarity input,
+    that TVS is forward biased directly across the supply.
 
-15. Power nets are involved in copper-clearance failures.
-    DRC includes `+12V`, `+5V`, `+3.3V`, and `Net-(U3-VCC_RF)` clearance
-    violations to copper pours. These are not only low-speed signal issues.
+15. The input TVS has no upstream fuse or current-limiting element.
+    D1 is the transient/reverse-energy shunt for the 12 V input, but the design
+    has no fuse, PTC, or other series current limiter ahead of it. A sustained
+    reverse connection or surge can destroy the TVS or copper instead of
+    producing controlled protection.
 
-16. RF nets are involved in copper-clearance and width failures.
-    DRC flags `Net-(AE1-A)`, `Net-(U3-RF_IN)`, and `Net-(U3-VCC_RF)`. The
-    u-blox integration manual calls out careful RF layout and 50 ohm antenna
-    routing, so these rule failures directly affect GPS reception.
+16. The PMOS gate clamp part is the wrong device type.
+    D2 is `PMEG10020ELR`, a 100 V Schottky rectifier. It is connected between
+    the PMOS gate and source where a VGS clamp would normally be a Zener/TVS.
+    It does not clamp negative VGS during positive input transients.
 
-17. Copper is too close to the board edge and mounting/mechanical features.
-    DRC reports copper-edge violations at J1 NPTH pads and U2 pads, including
-    U2 pad 48 on `+5V`, below the 0.5000 mm edge rule.
+17. The PMOS gate pull-down resistor is overstressed in the chosen footprint.
+    R1 is `1k` in a 0402 footprint from the PMOS gate to ground. At a normal
+    12 V input it dissipates about 144 mW, and at 14.4 V it dissipates about
+    207 mW, which is too much for an ordinary 0402 gate-bias resistor.
 
-18. The board has isolated copper islands on GND and +3.3V pours.
-    DRC reports 32 isolated copper fills. Floating islands do not provide useful
-    return paths and can couple noise into the GPS/RF section.
+18. The Teensy external-power path can backfeed USB.
+    The board powers Teensy VIN from the 5 V regulator, but PJRC documents that
+    Teensy VIN and VUSB are connected unless the cut pads are separated. The
+    carrier design does not isolate VUSB from VIN, so plugging in USB while the
+    tester is externally powered can backfeed the host computer.
 
-19. C6 and U5 courtyards overlap.
-    DRC reports a courtyard overlap between the MAX2679 WLP and its capacitor,
-    which is an assembly/placement error in the RF section.
+19. The PCB has a real open on the `+3.3V` rail.
+    KiCad DRC reports one missing connection on `+3.3V` between F.Cu track
+    islands near `(167.320101, 35.774840)` and `(158.100000, 32.900000)`.
+    That is a split power rail, not a repeated clearance violation.
 
-20. SW1 schematic and PCB footprint disagree.
-    DRC schematic parity reports no PCB pad for schematic SW1 pin 4
-    (`BTN_TEST`) and no PCB pad for schematic SW1 pin 3 (`GND`). The switch
-    still has some duplicated pad names, but the schematic and footprint are not
-    a one-to-one match.
+20. The MAX2679 and C6 courtyards overlap.
+    KiCad DRC reports a courtyard overlap between U5 and C6. This is a concrete
+    placement/assembly error in the RF section.
 
-21. Firmware never configures LED pins as outputs.
-    `set_status()` calls `digitalWrite()` on pins 5, 6, and 7, but `setup()`
-    never calls `pinMode(..., OUTPUT)` for those pins. On Arduino/Teensy this
-    toggles input pullups instead of driving the common-anode LED cathodes.
+21. The GNSS patch antenna is placed with zero board-edge clearance.
+    The AE1 footprint is centered so its nominal 25 mm body reaches the board
+    edge at x = 119.5 mm. The ANT-GNSSCP-TH25L1 data sheet body is 25.1 mm, so
+    the real component has essentially no edge clearance and can overhang the
+    PCB.
 
-22. Firmware never configures GPS reset/safeboot pins as outputs.
-    `setup()` calls `digitalWrite(PIN_UBX_SAFEBOOT, LOW)` and
-    `digitalWrite(PIN_UBX_RST_N, HIGH)` without `pinMode(..., OUTPUT)`, so those
-    intended control writes do not drive the NEO-M8 pins.
-
-23. Firmware never calls `cy.begin()`.
-    The CY8C9560 object is constructed, but `setup()` never initializes it, never
-    starts `Wire2`, never verifies the ID, and never configures/reset-releases
-    the expander before using it.
-
-24. The CY8C9560 reset sequence leaves reset asserted.
-    `CY8C9560::begin()` drives `CY_RST` high, then low, then returns while it is
-    still low. The hardware net is `CY_RST_N`, so the active-low reset remains
-    asserted even if `begin()` is added.
-
-25. The harness test uses 32-bit shifts for 40 pins.
-    `uint64_t output_mask = 1 << i` and `(values & (1 << j))` use an `int` left
-    operand. Pins 32 through 39 overflow or invoke undefined behavior instead of
-    setting 64-bit masks.
-
-26. Each selected output is immediately changed back to an input.
-    In the loop, firmware calls `cy.set_output(output_mask, output_mask)` and
-    then `cy.set_pd_inputs(~output_mask)`. `set_pd_inputs()` writes
-    `REG_PIN_DIRECTION` to `0xFF` for every port, so the selected driven pin is
-    no longer an output when inputs are read.
-
-27. The CY8C9560 helper functions clobber whole ports instead of selected pins.
-    `set_output()` writes `REG_PIN_DIRECTION = 0x00` for every port, while
-    `set_pd_inputs()`/`set_pu_inputs()` write `0xFF` for every port. They do not
-    preserve directions for nonselected pins or clear stale drive-mode bits.
-
-28. The pass/fail aggregation is wrong.
-    `passed` starts false and is set true if any one row matches
-    `EXPECTED_CONNECTIONS[i]`. It is never set false on a mismatch, so one
-    correct pin can make a bad harness pass.
-
-29. The start button logic is inverted.
-    Hardware has `BTN_TEST` pulled up by R4 to `+3.3V` and SW1 pulls it to GND.
-    Firmware returns when the input is LOW, so it does not test while pressed
-    and instead tests when the button is not pressed.
-
-30. The NMEA receive buffer can overflow.
-    `nmea_buf` is 64 bytes, `nmea_idx++` is unchecked, and `process_nmea()` then
-    writes `buf[len] = 0`. Standard NMEA sentences can be longer than this.
-
-31. The GPS lock check accepts invalid RMC sentences.
-    `process_nmea()` ignores the RMC status field (`A` valid versus `V` invalid)
-    by parsing it with `%*c`. It sets `time_fixed = true` even when the receiver
-    explicitly reports no valid fix.
-
-32. The GPS parser does not validate the NMEA checksum.
-    Any corrupted or partial `$GPRMC` line with parseable fields can set the
-    device to ready and provide the logged date/time.
-
-33. The firmware is level-triggered and logs repeatedly while the button is in
-    the active state.
-    There is no edge detection or debounce around `PIN_BTN_TEST`; combined with
-    the inverted logic, it can run and append results continuously while idle.
+22. The GNSS patch antenna has essentially no placement clearance to the NEO-M8
+    module.
+    AE1's 25.1 mm body extends to about x = 144.55 mm, while the U3 NEO-M8
+    courtyard starts at about x = 144.59 mm. A ceramic patch antenna and the
+    GNSS module should not be placed with only about 0.04 mm nominal clearance.
 
 ## Count
 
-Total distinct bugs listed: 33.
+Total proper hardware bugs listed: 22.
