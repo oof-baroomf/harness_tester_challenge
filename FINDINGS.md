@@ -2,18 +2,17 @@
 
 Target: https://github.com/commaai/harness_tester_challenge at `069f724`.
 
-This is a hardware-only list. It intentionally excludes firmware-only bugs and
-does not count repeated ERC/DRC violations as separate findings. KiCad ERC/DRC
-was used only to confirm concrete schematic/PCB facts such as an open net,
-footprint mismatch, or placement conflict.
+This is a strict hardware list. It does not count firmware bugs, bulk ERC/DRC
+output, cosmetic silk issues, generic width/clearance rule violations, or
+"would be nicer" layout recommendations.
 
 ## Verification Sources
 
 - KiCad 10.0.3 schematic netlist exported from
   `kicad_files/hardware_challenge.kicad_sch`.
-- KiCad PCB DRC with schematic parity enabled on
+- KiCad 10.0.3 PCB DRC with schematic parity enabled on
   `kicad_files/hardware_challenge.kicad_pcb`.
-- PJRC Teensy 4.1 docs:
+- PJRC Teensy 4.1 documentation:
   https://www.pjrc.com/store/teensy41.html
 - u-blox NEO-M8 data sheet:
   https://content.u-blox.com/sites/default/files/NEO-M8_DataSheet_%28UBX-13003366%29.pdf
@@ -32,127 +31,91 @@ footprint mismatch, or placement conflict.
   https://assets.nexperia.com/documents/data-sheet/PMEG10020ELR.pdf
 - Littelfuse SMAJ16A product page:
   https://www.littelfuse.com/products/overvoltage-protection/tvs-diodes/surface-mount/smaj/smaj16a
-- TE/Linx ANT-GNSSCP-TH25L1 product page and data sheet:
-  https://www.te.com/en/product-ANT-GNSSCP-TH25L1.html
-  https://www.te.com/commerce/DocumentDelivery/DDEController?Action=srchrtrv&DocFormat=pdf&DocLang=English&DocNm=ant-gnsscp-th25l1-ds&DocType=Data+Sheet&PartCntxt=ANT-GNSSCP-TH25L1
 
 ## Hardware Bugs
 
 1. The CY8C9560A footprint is the wrong physical package.
-   U4 is assigned `Package_QFP:TQFP-100_12x12mm_P0.4mm`, but
-   `CY8C9560A-24AXIT` is a 100-pin TQFP 14 mm x 14 mm package with 0.5 mm
-   pitch. The expander cannot be assembled on this PCB footprint.
+   U4 is `CY8C9560A-24AXIT`, which is a 100-pin TQFP 14 mm x 14 mm package
+   with 0.5 mm pitch. The PCB assigns `Package_QFP:TQFP-100_12x12mm_P0.4mm`.
+   The expander cannot be assembled on that footprint.
 
-2. The GPS UART is wired straight-through instead of crossed.
+2. The CY8C9560 reset pin is represented with the wrong polarity.
+   The selected device pin is active-high `XRES` with an internal pull-down.
+   The schematic symbol and net call the same pin `RESET_N` / `CY_RST_N`,
+   which is an active-low reset interface. That is a hardware symbol/net
+   contract error on U4 pin 62.
+
+3. The CY8C9560 I2C SDA line is pulled down.
+   R2 pulls `CY_SCL` to `+3.3V`, but R3 connects `CY_SDA` to `GND`. SDA is
+   therefore held low through 4.7k and the I2C bus cannot work normally.
+
+4. The GPS UART TX/RX nets are straight-through instead of crossed.
    `UBX-TXD` connects NEO-M8 pin 20 `TxD` to Teensy pin 1 `TX1`, and
    `UBX-RXD` connects NEO-M8 pin 21 `RxD` to Teensy pin 0 `RX1`. UART TX must
-   connect to the other device's RX.
+   go to the other device's RX.
 
-3. The CY8C9560 I2C SDA line is pulled down instead of pulled up.
-   R2 correctly pulls `CY_SCL` to `+3.3V`, but R3 connects `CY_SDA` to `GND`.
-   That holds SDA low and prevents normal I2C communication.
+5. NEO-M8 `SAFEBOOT_N` is routed to the Teensy.
+   U3 pin 1 connects to `UBX-SAFEBOOT` and then to a Teensy GPIO. The NEO-M8
+   data sheet marks this pin as reserved/service and says to leave it open for
+   NEO-M8N/Q/M variants. Holding it low at startup enters Safe Boot Mode instead
+   of GNSS operation.
 
-4. The RGB status LED has no current-limiting resistors.
-   D3 pin 1 is tied directly to `+3.3V`; D3 pins 2/3/4 go directly to Teensy
-   GPIO nets. Each LED channel needs a current limiter.
+6. The RGB LED has no current-limiting resistors.
+   D3's common anode is tied directly to `+3.3V`; the red, green, and blue
+   cathodes go directly to Teensy GPIO nets. Each LED channel needs a current
+   limiter.
 
-5. The RGB LED red and blue channels are swapped against the selected part.
+7. The RGB LED red and blue channels are swapped.
    The ASMB-KTF0-0A306 data sheet lists pin 2 as red cathode and pin 4 as blue
-   cathode. The schematic/PCB connect D3 pin 2 to `LED_B` and pin 4 to
-   `LED_R`, so the hardware status colors are wrong.
+   cathode. The design connects D3 pin 2 to `LED_B` and D3 pin 4 to `LED_R`.
 
-6. The CY8C9560 reset pin is given the wrong polarity in the schematic.
-   The Infineon data sheet describes the external reset as active high `XRES`
-   with an internal pull-down. The design labels and routes it as
-   `CY_RST_N`/`RESET_N`, an active-low reset. That is a hardware symbol/pin
-   function error independent of firmware behavior.
+8. The MAX2679 LNA is powered from an overvoltage rail.
+   U5 VCC is tied to NEO-M8 `VCC_RF`. With the receiver powered at 3.3 V,
+   `VCC_RF` is approximately the receiver supply. MAX2679 operation is
+   specified only from 1.08 V to 1.98 V, with a 2.2 V absolute maximum.
 
-7. The MAX2679 LNA is powered from an overvoltage rail.
-   U5 VCC is tied to `Net-(U3-VCC_RF)`. With the NEO-M8 powered at 3.3 V,
-   `VCC_RF` is approximately `VCC - 0.1 V`, while MAX2679 operation is
-   specified for 1.08 V to 1.98 V.
+9. MAX2679 RFIN is missing its required DC-blocking capacitor.
+   The MAX2679 pin description requires a DC-blocking capacitor and external
+   matching components at RFIN. The PCB connects AE1 directly to U5 B1/RFIN.
 
-8. MAX2679 RFIN has no required DC-blocking capacitor.
-   The data sheet says RFIN requires a DC-blocking capacitor and external
-   matching components. In this design AE1 connects directly to U5 B1/RFIN.
+10. The MAX2679 input matching inductor is on the wrong side of the LNA.
+    The MAX2679 input network needs a series inductor with the RFIN
+    DC-blocking capacitor. The only 12 nH inductor, L1, is connected to U5
+    A2/RFOUT and then to the NEO-M8 RF input.
 
-9. MAX2679 RFIN has no input matching inductor.
-   The MAX2679 typical input network uses a series inductor with the
-   DC-blocking capacitor. There is no inductor between the antenna and U5
-   B1/RFIN.
+11. The GNSS RF routing is not a controlled 50 ohm RF path.
+    u-blox requires a controlled 50 ohm route to `RF_IN`, and MAX2679 requires
+    controlled-impedance lines on high-frequency inputs and outputs. The board
+    uses inconsistent RF trace widths through the antenna/LNA/module path
+    instead of one defined transmission-line geometry.
 
-10. The 12 nH RF inductor is on the wrong side of the LNA.
-    L1 is connected from U5 A2/RFOUT to C5 and the NEO-M8 RF input. The
-    MAX2679 output is internally matched to 50 ohms; the external 12 nH
-    inductor belongs in the RFIN input matching network, not in the output
-    path.
-
-11. The RF coupling capacitor value is not a GNSS RF value.
-    C5 is `100n` in the 1.575 GHz path from the LNA output to NEO-M8 RF_IN.
-    The MAX2679 application material uses pF/nF RF capacitors, including
-    1000 pF parts; a generic 100 nF 0402 capacitor is not an appropriate RF
-    coupling/matching part at GNSS frequency.
-
-12. The GNSS RF routing is not a single controlled 50 ohm geometry.
-    The NEO-M8 manual requires a controlled 50 ohm connection to RF_IN. The
-    antenna/LNA/module route changes width from 0.8128 mm to 0.127 mm to
-    0.508 mm, and the nearest internal plane under the top RF route is the
-    `+3.3V` plane, not a continuous RF ground reference.
-
-13. NEO-M8 `SAFEBOOT_N` is routed to a GPIO even though the data sheet says to
-    leave it open.
-    U3 pin 1 is connected to `UBX-SAFEBOOT` and then to a Teensy GPIO. The
-    NEO-M8 pin table describes this pin as reserved/service for future
-    service, updates, and reconfiguration, with `leave OPEN` guidance.
-
-14. Reverse-polarity protection is defeated by the unidirectional TVS location.
+12. The reverse-polarity protection is bypassed by D1.
     D1 is a unidirectional SMAJ16A from the raw input jack node to ground and
-    is placed before the reverse-protection PMOS. On a reverse-polarity input,
-    that TVS is forward biased directly across the supply.
+    is placed before the PMOS reverse-protection stage. With reverse input
+    polarity, D1 is forward biased directly across the supply, so the PMOS does
+    not provide controlled reverse-polarity protection.
 
-15. The input TVS has no upstream fuse or current-limiting element.
-    D1 is the transient/reverse-energy shunt for the 12 V input, but the design
-    has no fuse, PTC, or other series current limiter ahead of it. A sustained
-    reverse connection or surge can destroy the TVS or copper instead of
-    producing controlled protection.
+13. The PMOS gate clamp is the wrong device type.
+    D2 is `PMEG10020ELR`, a Schottky rectifier, connected between the PMOS gate
+    and source where a VGS clamp would need to limit negative gate-source
+    voltage. It does not clamp the PMOS gate during positive input transients.
 
-16. The PMOS gate clamp part is the wrong device type.
-    D2 is `PMEG10020ELR`, a 100 V Schottky rectifier. It is connected between
-    the PMOS gate and source where a VGS clamp would normally be a Zener/TVS.
-    It does not clamp negative VGS during positive input transients.
+14. The PMOS gate pull-down is overstressed.
+    R1 is `1k` in an 0402 footprint from the PMOS gate to ground. At a normal
+    12 V input it dissipates 144 mW continuously, and at 14.4 V it dissipates
+    about 207 mW.
 
-17. The PMOS gate pull-down resistor is overstressed in the chosen footprint.
-    R1 is `1k` in a 0402 footprint from the PMOS gate to ground. At a normal
-    12 V input it dissipates about 144 mW, and at 14.4 V it dissipates about
-    207 mW, which is too much for an ordinary 0402 gate-bias resistor.
+15. The Teensy external-power integration does not isolate VIN from USB power.
+    The carrier board powers Teensy VIN from the 5 V regulator. PJRC documents
+    that VIN and VUSB are connected unless the underside pads are cut, and that
+    VIN should not be powered while USB is connected. This board has no carrier
+    isolation for that required external-power case.
 
-18. The Teensy external-power path can backfeed USB.
-    The board powers Teensy VIN from the 5 V regulator, but PJRC documents that
-    Teensy VIN and VUSB are connected unless the cut pads are separated. The
-    carrier design does not isolate VUSB from VIN, so plugging in USB while the
-    tester is externally powered can backfeed the host computer.
-
-19. The PCB has a real open on the `+3.3V` rail.
-    KiCad DRC reports one missing connection on `+3.3V` between F.Cu track
-    islands near `(167.320101, 35.774840)` and `(158.100000, 32.900000)`.
-    That is a split power rail, not a repeated clearance violation.
-
-20. The MAX2679 and C6 courtyards overlap.
-    KiCad DRC reports a courtyard overlap between U5 and C6. This is a concrete
-    placement/assembly error in the RF section.
-
-21. The GNSS patch antenna is placed with zero board-edge clearance.
-    The AE1 footprint is centered so its nominal 25 mm body reaches the board
-    edge at x = 119.5 mm. The ANT-GNSSCP-TH25L1 data sheet body is 25.1 mm, so
-    the real component has essentially no edge clearance and can overhang the
-    PCB.
-
-22. The GNSS patch antenna has essentially no placement clearance to the NEO-M8
-    module.
-    AE1's 25.1 mm body extends to about x = 144.55 mm, while the U3 NEO-M8
-    courtyard starts at about x = 144.59 mm. A ceramic patch antenna and the
-    GNSS module should not be placed with only about 0.04 mm nominal clearance.
+16. The PCB has a real open on `+3.3V`.
+    KiCad reports one missing connection on `+3.3V` between F.Cu track islands
+    near `(167.320101, 35.774840)` and `(158.100000, 32.900000)`. This is an
+    actual split power net, not a repeated clearance/width rule violation.
 
 ## Count
 
-Total proper hardware bugs listed: 22.
+Total strict hardware bugs listed: 16.
