@@ -158,14 +158,13 @@ output, cosmetic silk issues, generic width/clearance rule violations, or
     traces sit in the antenna field/counterpoise area instead of being kept away
     from it.
 
-21. The passive GNSS patch feed lacks RF-input ESD protection.
-    AE1 is a passive patch antenna connected directly into the MAX2679 RFIN node
-    and then to the NEO-M8 RF input. u-blox warns that exposed antenna areas and
-    passive antenna patches can discharge through the receiver RF input, and says
-    passive patch designs should add ESD measures such as an LNA with an
-    appropriate ESD rating. The MAX2679 data sheet does not specify that kind of
-    protected antenna input, and this board has no low-capacitance RF ESD device
-    ahead of the receiver.
+21. Most of the 40-pin harness header holes are outside the board outline.
+    J3 is a through-hole right-angle 2x20 header footprint placed at
+    `(174.125, 94.35)` with `-90` degree rotation. The Edge.Cuts outline only
+    reaches `x=180.5 mm`, but the transformed J3 pad centers run from
+    `x=174.125 mm` through `x=222.385 mm`. Pads 7 through 40 are beyond the
+    right board edge, so 34 of the 40 harness pins would have no drilled/plated
+    board material to mount into.
 
 ## Count
 
