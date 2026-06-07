@@ -14,6 +14,8 @@ output, cosmetic silk issues, generic width/clearance rule violations, or
   `kicad_files/hardware_challenge.kicad_pcb`.
 - PJRC Teensy 4.1 documentation:
   https://www.pjrc.com/store/teensy41.html
+- STMicroelectronics L78 data sheet:
+  https://www.st.com/resource/en/datasheet/l78.pdf
 - u-blox NEO-M8 data sheet:
   https://content.u-blox.com/sites/default/files/NEO-M8_DataSheet_%28UBX-13003366%29.pdf
 - u-blox NEO-M8 hardware integration manual:
@@ -112,22 +114,59 @@ output, cosmetic silk issues, generic width/clearance rule violations, or
     so the SMAJ16A's 26 V maximum clamp event can exceed Q1's +/-20 V VGS
     rating.
 
-15. The PMOS gate pull-down is overstressed.
-    R1 is `1k` in an 0402 footprint from the PMOS gate to ground. At a normal
-    12 V input it dissipates 144 mW continuously, and at 14.4 V it dissipates
-    about 207 mW.
-
-16. The Teensy external-power integration does not isolate VIN from USB power.
+15. The Teensy external-power integration does not isolate VIN from USB power.
     The carrier board powers Teensy VIN from the 5 V regulator. PJRC documents
     that VIN and VUSB are connected unless the underside pads are cut, and that
     VIN should not be powered while USB is connected. This board has no carrier
     isolation for that required external-power case.
 
-17. The PCB has a real open on `+3.3V`.
-    KiCad reports one missing connection on `+3.3V` between F.Cu track islands
-    near `(167.320101, 35.774840)` and `(158.100000, 32.900000)`. This is an
-    actual split power net, not a repeated clearance/width rule violation.
+16. The RGB LED anode is physically disconnected on the PCB.
+    KiCad reports one missing connection on `+3.3V` between the D3 anode branch
+    at `(158.100000, 32.900000)` and the rest of the rail near
+    `(167.320101, 35.774840)`. This is an actual open in the LED power path,
+    not a repeated clearance/width rule violation.
+
+17. The 12 V to 5 V linear regulator is thermally undersized.
+    U1 is an L7805 in a DPAK/TO-252 footprint, dropping the nominal 12 V input
+    to 5 V for the Teensy. ST lists DPAK junction-to-ambient thermal resistance
+    as 100 C/W without adequate heatsinking. At only 100 mA of 5 V load, the
+    regulator must burn about 0.7 W from 12 V input and about 0.94 W from a
+    14.4 V automotive supply. That is a 70 C to 94 C junction rise before adding
+    the Teensy, GNSS, expander, and LED load margin.
+
+18. The NEO-M8 main supply pin has no local input capacitor.
+    U3 pin 23 `VCC` and pin 22 `V_BCKP` connect to `+3.3V`, but the only
+    capacitors on that rail are at the Teensy/CY8C area. The nearest `+3.3V`
+    capacitors, C3 and C4, are roughly 24 mm and 30 mm from U3 `VCC`; C6 is on
+    `VCC_RF`, not on `VCC`. u-blox calls for a clean, stable VCC supply and low
+    ESR capacitance at the module input to handle startup current peaks.
+
+19. The external GNSS LNA is placed on the receiver side of the RF path, not at
+    the passive antenna.
+    u-blox says an external LNA is only needed when the passive antenna is far
+    away, and in that case it must be placed close to the passive antenna. On
+    this PCB the AE1 feed pin is at about `(129.5, 77.0)`, while U5 RFIN is at
+    about `(148.0, 68.6)`, leaving roughly 20 mm of unamplified patch-antenna
+    trace before the LNA and placing U5 closer to the NEO-M8 RF input than to
+    the antenna feed.
+
+20. Harness signal traces run under the GNSS patch antenna.
+    The PCB routes `CBL_37`, `CBL_38`, and `CBL_39` on `In1.Cu` inside the
+    25 mm x 25 mm AE1 patch antenna body. u-blox warns that passive antennas
+    need extra RF-layout care and that weakly shielded PCB lines and unshielded
+    connector lines are critical EMI sources for GNSS receivers. These harness
+    traces sit in the antenna field/counterpoise area instead of being kept away
+    from it.
+
+21. The passive GNSS patch feed lacks RF-input ESD protection.
+    AE1 is a passive patch antenna connected directly into the MAX2679 RFIN node
+    and then to the NEO-M8 RF input. u-blox warns that exposed antenna areas and
+    passive antenna patches can discharge through the receiver RF input, and says
+    passive patch designs should add ESD measures such as an LNA with an
+    appropriate ESD rating. The MAX2679 data sheet does not specify that kind of
+    protected antenna input, and this board has no low-capacitance RF ESD device
+    ahead of the receiver.
 
 ## Count
 
-Total strict hardware bugs listed: 17.
+Total strict hardware bugs listed: 21.
